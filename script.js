@@ -43,12 +43,14 @@ document.querySelector(".check").addEventListener("click", function () {
       document.querySelector(".highscore").textContent = highScore;
     }
   } else if (guess !== secretNumber) {
-    displayMessage(guess > secretNumber ? "Too high!" : "Too low!");
-    score--;
-    displayScore(score);
-  } else {
-    displayMessage("You lost the game!");
-    document.querySelector(".score").textContent = 0;
+    if (score > 1) {
+      displayMessage(guess > secretNumber ? "Too high!" : "Too low!");
+      score--;
+      displayScore(score);
+    } else {
+      displayMessage("You lost the game!");
+      document.querySelector(".score").textContent = 0;
+    }
   }
 });
 
