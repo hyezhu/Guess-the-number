@@ -31,6 +31,7 @@ document.querySelector(".check").addEventListener("click", function () {
 
   if (!guess || guess < 0 || guess > 23) {
     displayMessage("Invalid number!");
+    document.querySelector(".guess").value = "";
   } else if (guess === secretNumber) {
     displayMessage("Correct number!");
 
