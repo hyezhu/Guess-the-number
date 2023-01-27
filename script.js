@@ -29,8 +29,8 @@ document.querySelector(".check").addEventListener("click", function () {
   const guess = Number(document.querySelector(".guess").value);
   console.log(guess, typeof guess);
 
-  if (!guess) {
-    displayMessage("No number!");
+  if (!guess || guess < 0 || guess > 23) {
+    displayMessage("Invalid number!");
   } else if (guess === secretNumber) {
     displayMessage("Correct number!");
 
@@ -42,7 +42,7 @@ document.querySelector(".check").addEventListener("click", function () {
       highScore = score;
       document.querySelector(".highscore").textContent = highScore;
     }
-  } else if (guess !== secretNumber) {
+  } else if (guess !== secretNumber && guess > 0 && guess <= 23) {
     if (score > 1) {
       displayMessage(guess > secretNumber ? "Too high!" : "Too low!");
       score--;
