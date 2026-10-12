@@ -9,23 +9,25 @@ const guessInput = document.querySelector(".guess");
 const modal = document.querySelector(".modal");
 const formError = document.querySelector(".form-error");
 
-// "local" = both players on this device
-// "host"  = online, this browser runs the game and is player 1
-// "guest" = online, joined through an invite link, is player 2
+// "solo"     = one player on their own
+// "computer" = one player against the computer (player 2)
+// "local"    = two players on this device
+// "host"     = online, this browser runs the game and is player 1
+// "guest"    = online, joined through an invite link, is player 2
 let mode = "local";
-let me = null; // which player this browser controls online (0 or 1)
+let me = null; // which player this browser controls, null if both
 let friendGone = false;
 
 // Everything the screen shows. In online games the host owns it and
 // sends a copy to the guest after every change.
 let state = {
-  names: ["Player 1", "Player 2"],
+  names: ["Player 1", "Player 2"], // just one name in single player
   scores: [START_SCORE, START_SCORE],
   activePlayer: 0,
   firstPlayer: 0,
   playing: false,
   message: "Start guessing...",
-  winner: null,
+  winner: null, // player index, or -1 when a single player runs out of points
   revealed: null,
   round: 0,
   turnId: 0, // goes up whenever a new turn (and its countdown) starts
@@ -37,6 +39,7 @@ let state = {
   highScore: { score: 0, name: "" },
 };
 let secretNumber = null; // never sent to the guest
+let known = { lo: 1, hi: MAX_NUMBER }; // what the hints so far have ruled out
 
 // SAVED DATA
 // Best score ever (with who got it) and the win/loss record for
@@ -62,7 +65,14 @@ state.highScore = data.highScore;
 const matchupKey = names =>
   names.map(n => n.toLowerCase()).sort().join(" vs ");
 
+const isSolo = () => state.names.length === 1;
+
 const getRecord = function (names) {
+  if (names.length === 1) {
+    const key = `solo: ${names[0].toLowerCase()}`;
+    data.records[key] ??= { wins: 0, losses: 0 };
+    return [data.records[key]];
+  }
   const key = matchupKey(names);
   if (!data.records[key]) data.records[key] = {};
   const record = data.records[key];
@@ -76,12 +86,16 @@ const getRecord = function (names) {
 const emit = kind => (state.event = { id: state.event.id + 1, kind });
 
 const nextTurn = function () {
-  state.activePlayer = 1 - state.activePlayer;
+  if (!isSolo()) state.activePlayer = 1 - state.activePlayer;
   state.turnId++;
 };
 
+const turnMessage = () =>
+  isSolo() ? "Keep guessing!" : `${state.names[state.activePlayer]}'s turn`;
+
 const newRound = function () {
   secretNumber = Math.trunc(Math.random() * MAX_NUMBER) + 1;
+  known = { lo: 1, hi: MAX_NUMBER };
   state.scores = [START_SCORE, START_SCORE];
   state.activePlayer = state.firstPlayer;
   state.playing = true;
@@ -103,14 +117,19 @@ const newMatch = function (names) {
 const endGame = function (winner) {
   state.playing = false;
   state.winner = winner;
-  state.activePlayer = winner;
+  state.activePlayer = Math.max(winner, 0);
   state.revealed = secretNumber;
   emit("end");
 
-  state.record[winner].wins++;
-  state.record[1 - winner].losses++;
+  if (isSolo()) {
+    state.record[0][winner === 0 ? "wins" : "losses"]++;
+  } else {
+    state.record[winner].wins++;
+    state.record[1 - winner].losses++;
+  }
 
-  if (state.scores[winner] > data.highScore.score) {
+  const computerWon = mode === "computer" && winner === 1;
+  if (winner >= 0 && !computerWon && state.scores[winner] > data.highScore.score) {
     data.highScore = { score: state.scores[winner], name: state.names[winner] };
     state.highScore = data.highScore;
   }
@@ -133,21 +152,28 @@ const applyGuess = function (player, guess) {
     return;
   }
 
-  state.scores[player]--;
+  const tooHigh = guess > secretNumber;
+  if (tooHigh) known.hi = Math.min(known.hi, guess - 1);
+  else known.lo = Math.max(known.lo, guess + 1);
 
-  if (state.scores[player] === 0) {
-    const other = 1 - player;
-    state.message = `${name} is out! ${state.names[other]} wins!`;
-    endGame(other);
+  state.scores[player]--;
+  if (state.scores[player] === 0) return outOfPoints(player);
+
+  nextTurn();
+  state.message = `${guess} is ${tooHigh ? "too high" : "too low"}! ${turnMessage()}`;
+  emit(tooHigh ? "high" : "low");
+};
+
+const outOfPoints = function (player) {
+  const name = state.names[player];
+  if (isSolo()) {
+    state.message = `${name} is out of points!`;
+    endGame(-1);
     return;
   }
-
-  const tooHigh = guess > secretNumber;
-  nextTurn();
-  state.message = `${guess} is ${tooHigh ? "too high" : "too low"}! ${
-    state.names[state.activePlayer]
-  }'s turn`;
-  emit(tooHigh ? "high" : "low");
+  const other = 1 - player;
+  state.message = `${name} is out! ${state.names[other]} wins!`;
+  endGame(other);
 };
 
 // Running out of time costs a point and passes the turn
@@ -157,21 +183,15 @@ const applyTimeout = function (turnId) {
   const name = state.names[player];
 
   state.scores[player]--;
-
-  if (state.scores[player] === 0) {
-    const other = 1 - player;
-    state.message = `${name} is out! ${state.names[other]} wins!`;
-    endGame(other);
-    return;
-  }
+  if (state.scores[player] === 0) return outOfPoints(player);
 
   nextTurn();
-  state.message = `⏰ ${name} ran out of time! ${state.names[state.activePlayer]}'s turn`;
+  state.message = `⏰ ${name} ran out of time! ${turnMessage()}`;
   emit("timeout");
 };
 
 const applyAgain = function () {
-  state.firstPlayer = 1 - state.firstPlayer;
+  if (!isSolo()) state.firstPlayer = 1 - state.firstPlayer;
   newRound();
 };
 
@@ -189,7 +209,7 @@ const sendAction = function (action) {
     send({ ...action, to: friendId });
     return;
   }
-  handleAction(action, mode === "host" ? 0 : state.activePlayer);
+  handleAction(action, me ?? state.activePlayer);
 };
 
 const sendState = function () {
@@ -231,7 +251,7 @@ const render = function () {
   state.names.forEach((name, i) => {
     const { wins, losses } = state.record[i];
     document.getElementById(`name--${i}`).textContent =
-      i === me ? `${name} (you)` : name;
+      i === me && !isSolo() ? `${name} (you)` : name;
     document.getElementById(`score--${i}`).textContent = state.scores[i];
     document.getElementById(`record--${i}`).textContent = `W ${wins} · L ${losses}`;
   });
@@ -239,6 +259,7 @@ const render = function () {
   document.querySelectorAll(".player").forEach((el, i) => {
     el.classList.toggle("player--active", i === state.activePlayer);
   });
+  document.querySelector(".player--1").hidden = isSolo();
 
   const { score, name } = state.highScore;
   document.querySelector(".highscore").textContent = name
@@ -262,6 +283,44 @@ const render = function () {
   }
 
   updateTurnTimer();
+  planComputerMove();
+};
+
+// COMPUTER PLAYER
+// Uses the hints from both players' guesses. Easier levels guess sloppier.
+let difficulty = "normal";
+let computerTurn = 0;
+let computerTimer = null;
+
+const computerGuess = function () {
+  const { lo, hi } = known;
+  const randomBetween = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+  if (difficulty === "hard") return Math.floor((lo + hi) / 2);
+  if (difficulty === "normal") {
+    const quarter = Math.floor((hi - lo) / 4);
+    return randomBetween(lo + quarter, hi - quarter);
+  }
+  // Easy: often forgets the hints
+  return Math.random() < 0.4 ? randomBetween(1, MAX_NUMBER) : randomBetween(lo, hi);
+};
+
+const planComputerMove = function () {
+  const computersTurn =
+    mode === "computer" && state.playing && state.activePlayer === 1;
+  if (!computersTurn) {
+    clearTimeout(computerTimer);
+    computerTurn = 0;
+    return;
+  }
+  if (computerTurn === state.turnId) return;
+  computerTurn = state.turnId;
+  clearTimeout(computerTimer);
+
+  const turnId = state.turnId;
+  computerTimer = setTimeout(() => {
+    if (!state.playing || state.turnId !== turnId) return;
+    handleAction({ type: "guess", guess: computerGuess() }, 1);
+  }, 1000 + Math.random() * 1500); // "thinking"
 };
 
 // TURN TIMER
@@ -488,7 +547,31 @@ document.querySelectorAll("[data-go]").forEach(btn =>
   btn.addEventListener("click", () => showScreen(btn.dataset.go))
 );
 
-// On this device
+const startOffline = function (newMode, names) {
+  mode = newMode;
+  me = newMode === "local" ? null : 0;
+  newMatch(names);
+  modal.hidden = true;
+  render();
+};
+
+// Single player
+document.querySelector(".solo-form").addEventListener("submit", function (e) {
+  e.preventDefault();
+  const name = document.getElementById("solo-name").value.trim() || "Player 1";
+  startOffline("solo", [name]);
+});
+
+// Against the computer
+document.querySelector(".computer-form").addEventListener("submit", function (e) {
+  e.preventDefault();
+  let name = document.getElementById("computer-name").value.trim() || "Player 1";
+  if (name.toLowerCase() === "computer") name += " 2";
+  difficulty = document.getElementById("difficulty").value;
+  startOffline("computer", [name, "Computer"]);
+});
+
+// Two players on this device
 document.querySelector(".local-form").addEventListener("submit", function (e) {
   e.preventDefault();
   const names = [0, 1].map(
@@ -500,11 +583,7 @@ document.querySelector(".local-form").addEventListener("submit", function (e) {
     showError("Players need different names!");
     return;
   }
-  mode = "local";
-  me = null;
-  newMatch(names);
-  modal.hidden = true;
-  render();
+  startOffline("local", names);
 });
 
 // Online: create an invite link

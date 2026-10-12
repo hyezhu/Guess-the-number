@@ -6,7 +6,7 @@
   <meta name="viewport"
     content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="X-UA-Compatible" content="ie=edge" />
-  <link rel="stylesheet" href="style.css?v=4" />
+  <link rel="stylesheet" href="style.css?v=5" />
   <title>Guess My Number!</title>
 </head>
 
@@ -47,9 +47,33 @@
     <div class="dialog">
       <section class="screen" data-screen="choose" hidden>
         <h2>How do you want to play?</h2>
-        <button type="button" class="btn" data-go="local">On this device</button>
+        <button type="button" class="btn" data-go="solo">Single player</button>
+        <button type="button" class="btn" data-go="computer">Vs. computer</button>
+        <button type="button" class="btn" data-go="local">2 players, this device</button>
         <button type="button" class="btn" data-go="host">Online with a friend</button>
       </section>
+
+      <form class="screen solo-form" data-screen="solo" hidden>
+        <h2>Single player</h2>
+        <label for="solo-name">Your name</label>
+        <input type="text" id="solo-name" maxlength="12" placeholder="Player 1" autocomplete="off" />
+        <button type="submit" class="btn">Start!</button>
+        <button type="button" class="link-btn" data-go="choose">&larr; Back</button>
+      </form>
+
+      <form class="screen computer-form" data-screen="computer" hidden>
+        <h2>Vs. computer</h2>
+        <label for="computer-name">Your name</label>
+        <input type="text" id="computer-name" maxlength="12" placeholder="Player 1" autocomplete="off" />
+        <label for="difficulty">Difficulty</label>
+        <select id="difficulty">
+          <option value="easy">Easy</option>
+          <option value="normal" selected>Normal</option>
+          <option value="hard">Hard</option>
+        </select>
+        <button type="submit" class="btn">Start!</button>
+        <button type="button" class="link-btn" data-go="choose">&larr; Back</button>
+      </form>
 
       <form class="screen local-form" data-screen="local" hidden>
         <h2>Who's playing?</h2>
@@ -90,7 +114,7 @@
   </div>
   <canvas class="fireworks"></canvas>
   <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
-  <script src="script.js?v=4"></script>
+  <script src="script.js?v=5"></script>
 </body>
 
 </html>
