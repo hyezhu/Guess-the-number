@@ -333,10 +333,15 @@ document.querySelector(".host-form").addEventListener("submit", function (e) {
 document.querySelector(".copy-link").addEventListener("click", function () {
   const input = document.querySelector(".invite-link");
   input.select();
-  navigator.clipboard
-    ?.writeText(input.value)
-    .then(() => (this.textContent = "Copied!"))
-    .catch(() => {});
+  if (navigator.clipboard) {
+    navigator.clipboard
+      .writeText(input.value)
+      .then(() => (this.textContent = "Copied!"))
+      .catch(() => {});
+  } else if (document.execCommand("copy")) {
+    // Clipboard API only exists on https/localhost, e.g. not on a LAN address
+    this.textContent = "Copied!";
+  }
   setTimeout(() => (this.textContent = "Copy link"), 2000);
 });
 
