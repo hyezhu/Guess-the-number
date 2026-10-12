@@ -41,17 +41,52 @@
     </section>
   </main>
   <div class="modal" hidden>
-    <form class="name-form">
-      <h2>Who's playing?</h2>
-      <label for="input-name--0">Player 1</label>
-      <input type="text" id="input-name--0" maxlength="12" placeholder="Player 1" autocomplete="off" />
-      <label for="input-name--1">Player 2</label>
-      <input type="text" id="input-name--1" maxlength="12" placeholder="Player 2" autocomplete="off" />
+    <div class="dialog">
+      <section class="screen" data-screen="choose" hidden>
+        <h2>How do you want to play?</h2>
+        <button type="button" class="btn" data-go="local">On this device</button>
+        <button type="button" class="btn" data-go="host">Online with a friend</button>
+      </section>
+
+      <form class="screen local-form" data-screen="local" hidden>
+        <h2>Who's playing?</h2>
+        <label for="input-name--0">Player 1</label>
+        <input type="text" id="input-name--0" maxlength="12" placeholder="Player 1" autocomplete="off" />
+        <label for="input-name--1">Player 2</label>
+        <input type="text" id="input-name--1" maxlength="12" placeholder="Player 2" autocomplete="off" />
+        <button type="submit" class="btn">Start!</button>
+        <button type="button" class="link-btn" data-go="choose">&larr; Back</button>
+      </form>
+
+      <form class="screen host-form" data-screen="host" hidden>
+        <h2>Play online</h2>
+        <label for="host-name">Your name</label>
+        <input type="text" id="host-name" maxlength="12" placeholder="Player 1" autocomplete="off" />
+        <button type="submit" class="btn">Create invite link</button>
+        <button type="button" class="link-btn" data-go="choose">&larr; Back</button>
+      </form>
+
+      <section class="screen" data-screen="invite" hidden>
+        <h2>Invite your friend</h2>
+        <p class="hint">Send this link to your friend:</p>
+        <input type="text" class="invite-link" readonly />
+        <button type="button" class="btn copy-link">Copy link</button>
+        <p class="status">Waiting for your friend to join...</p>
+        <button type="button" class="link-btn cancel-invite">Cancel</button>
+      </section>
+
+      <form class="screen join-form" data-screen="join" hidden>
+        <h2>You're invited!</h2>
+        <label for="join-name">Your name</label>
+        <input type="text" id="join-name" maxlength="12" placeholder="Player 2" autocomplete="off" />
+        <button type="submit" class="btn">Join game</button>
+      </form>
+
       <p class="form-error"></p>
-      <button type="submit" class="btn">Start!</button>
-    </form>
+    </div>
   </div>
   <canvas class="fireworks"></canvas>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script src="script.js"></script>
 </body>
 

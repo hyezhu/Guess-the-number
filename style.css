@@ -162,42 +162,85 @@ h1 {
   display: none;
 }
 
-.name-form {
+.dialog {
   background-color: #333;
   border: 4px solid #eee;
   padding: 4rem;
   width: 50rem;
   max-width: 100%;
-  display: flex;
-  flex-direction: column;
   font-size: 1.6rem;
 }
 
-.name-form h2 {
-  font-size: 2.4rem;
-  text-align: center;
-  margin-bottom: 3rem;
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
 }
 
-.name-form label {
+.screen[hidden] {
+  display: none;
+}
+
+.dialog h2 {
+  font-size: 2.4rem;
+  text-align: center;
+  line-height: 1.4;
   margin-bottom: 1rem;
 }
 
-.name-form input {
+.dialog label {
+  margin-bottom: -1rem;
+}
+
+.dialog input {
   background: none;
   border: 4px solid #eee;
   font-family: inherit;
   color: inherit;
   font-size: 2rem;
   padding: 1.5rem;
-  margin-bottom: 2.5rem;
+  width: 100%;
+}
+
+.dialog .invite-link {
+  font-size: 1.2rem;
+}
+
+.hint,
+.status {
+  line-height: 1.5;
+}
+
+.status {
+  color: #bbb;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: #bbb;
+  font-family: inherit;
+  font-size: 1.4rem;
+  cursor: pointer;
+  align-self: center;
+}
+
+.link-btn:hover {
+  color: #eee;
+}
+
+.guess:disabled {
+  opacity: 0.4;
 }
 
 .form-error {
   color: #ff8a80;
-  min-height: 2rem;
-  margin-bottom: 1.5rem;
+  margin-top: 2rem;
   line-height: 1.4;
+}
+
+.form-error:empty {
+  display: none;
 }
 
 .fireworks {
