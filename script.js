@@ -2,6 +2,7 @@
 
 const MAX_NUMBER = 100;
 const START_SCORE = 100;
+const TURN_SECONDS = 20;
 const STORAGE_KEY = "guess-my-number";
 
 const guessInput = document.querySelector(".guess");
@@ -27,6 +28,8 @@ let state = {
   winner: null,
   revealed: null,
   round: 0,
+  turnId: 0, // goes up whenever a new turn (and its countdown) starts
+  event: { id: 0, kind: null }, // last thing that happened, for sounds
   record: [
     { wins: 0, losses: 0 },
     { wins: 0, losses: 0 },
@@ -70,6 +73,13 @@ const getRecord = function (names) {
 };
 
 // GAME RULES (run by the local game or the online host)
+const emit = kind => (state.event = { id: state.event.id + 1, kind });
+
+const nextTurn = function () {
+  state.activePlayer = 1 - state.activePlayer;
+  state.turnId++;
+};
+
 const newRound = function () {
   secretNumber = Math.trunc(Math.random() * MAX_NUMBER) + 1;
   state.scores = [START_SCORE, START_SCORE];
@@ -78,7 +88,9 @@ const newRound = function () {
   state.winner = null;
   state.revealed = null;
   state.round++;
+  state.turnId++;
   state.message = `${state.names[state.firstPlayer]}, start guessing...`;
+  emit("start");
 };
 
 const newMatch = function (names) {
@@ -93,6 +105,7 @@ const endGame = function (winner) {
   state.winner = winner;
   state.activePlayer = winner;
   state.revealed = secretNumber;
+  emit("end");
 
   state.record[winner].wins++;
   state.record[1 - winner].losses++;
@@ -110,6 +123,7 @@ const applyGuess = function (player, guess) {
 
   if (!guess || guess < 1 || guess > MAX_NUMBER) {
     state.message = `Invalid number! ${name}, try again`;
+    emit("invalid");
     return;
   }
 
@@ -128,9 +142,32 @@ const applyGuess = function (player, guess) {
     return;
   }
 
-  const hint = guess > secretNumber ? "too high" : "too low";
-  state.activePlayer = 1 - player;
-  state.message = `${guess} is ${hint}! ${state.names[state.activePlayer]}'s turn`;
+  const tooHigh = guess > secretNumber;
+  nextTurn();
+  state.message = `${guess} is ${tooHigh ? "too high" : "too low"}! ${
+    state.names[state.activePlayer]
+  }'s turn`;
+  emit(tooHigh ? "high" : "low");
+};
+
+// Running out of time costs a point and passes the turn
+const applyTimeout = function (turnId) {
+  if (!state.playing || state.turnId !== turnId) return;
+  const player = state.activePlayer;
+  const name = state.names[player];
+
+  state.scores[player]--;
+
+  if (state.scores[player] === 0) {
+    const other = 1 - player;
+    state.message = `${name} is out! ${state.names[other]} wins!`;
+    endGame(other);
+    return;
+  }
+
+  nextTurn();
+  state.message = `⏰ ${name} ran out of time! ${state.names[state.activePlayer]}'s turn`;
+  emit("timeout");
 };
 
 const applyAgain = function () {
@@ -142,6 +179,7 @@ const applyAgain = function () {
 const handleAction = function (action, player) {
   if (action.type === "guess") applyGuess(player, action.guess);
   if (action.type === "again") applyAgain();
+  if (action.type === "timeout") applyTimeout(action.turnId);
   render();
   sendState();
 };
@@ -160,16 +198,35 @@ const sendState = function () {
 
 // DRAWING THE SCREEN
 let celebratedRound = 0;
+let heardEvent = 0;
 
 const render = function () {
   const myTurn = state.playing && (me === null || me === state.activePlayer);
+  // On a shared screen the winner's celebration is shown
+  const outcome =
+    state.winner === null
+      ? null
+      : me === null || me === state.winner
+      ? "win"
+      : "lose";
 
   document.querySelector(".message").textContent = state.message;
   document.querySelector(".number").textContent = state.revealed ?? "?";
   document.querySelector(".number").style.width =
     state.revealed === null ? "15rem" : "30rem";
   document.querySelector("body").style.backgroundColor =
-    state.winner === null ? "#333" : "#60b347";
+    outcome === "win" ? "#60b347" : outcome === "lose" ? "#b33939" : "#333";
+
+  const result = document.querySelector(".result");
+  result.hidden = !outcome;
+  result.innerHTML =
+    outcome === "win"
+      ? '<span class="banana" role="img" aria-label="Dancing banana">🍌</span>'
+      : outcome === "lose"
+      ? '<span class="heart" role="img" aria-label="Broken heart">💔</span>'
+      : "";
+  guessInput.hidden = !!outcome;
+  document.querySelector(".check").hidden = !!outcome;
 
   state.names.forEach((name, i) => {
     const { wins, losses } = state.record[i];
@@ -191,13 +248,70 @@ const render = function () {
   guessInput.disabled = !myTurn;
   if (myTurn && modal.hidden) guessInput.focus();
 
-  if (state.winner === null) {
+  if (outcome !== "win") {
     stopFireworks();
   } else if (celebratedRound !== state.round) {
     celebratedRound = state.round;
     launchFireworks();
   }
+  playMusic(outcome);
+
+  if (state.event.id !== heardEvent) {
+    heardEvent = state.event.id;
+    playSound(state.event.kind);
+  }
+
+  updateTurnTimer();
 };
+
+// TURN TIMER
+// Every browser shows the countdown; only the local game or the online
+// host decides when time is actually up.
+const timerEl = document.querySelector(".timer");
+let shownTurn = 0;
+let turnStartedAt = 0;
+let lastSecondShown = null;
+let timeoutTimer = null;
+let timedTurn = 0;
+
+const updateTurnTimer = function () {
+  timerEl.hidden = !state.playing;
+
+  if (state.turnId !== shownTurn) {
+    shownTurn = state.turnId;
+    turnStartedAt = Date.now();
+    lastSecondShown = null;
+  }
+
+  if (mode !== "guest") {
+    if (!state.playing) {
+      clearTimeout(timeoutTimer);
+      timedTurn = 0;
+    } else if (state.turnId !== timedTurn) {
+      clearTimeout(timeoutTimer);
+      timedTurn = state.turnId;
+      const turnId = state.turnId;
+      timeoutTimer = setTimeout(
+        () => handleAction({ type: "timeout", turnId }),
+        TURN_SECONDS * 1000
+      );
+    }
+  }
+};
+
+setInterval(() => {
+  if (!state.playing) return;
+  const left = Math.max(
+    0,
+    Math.ceil(TURN_SECONDS - (Date.now() - turnStartedAt) / 1000)
+  );
+  if (left === lastSecondShown) return;
+  lastSecondShown = left;
+  timerEl.textContent = `⏱ ${left}`;
+  timerEl.classList.toggle("timer--urgent", left <= 5);
+  const myTurn = me === null || me === state.activePlayer;
+  if (myTurn && left > 0 && left <= 5) playSound("tick");
+}, 200);
 
 // START SCREENS
 const showScreen = function (name) {
@@ -520,8 +634,192 @@ document.querySelector(".change-players").addEventListener("click", function () 
   mode = "local";
   me = null;
   friendGone = false;
+  state.playing = false;
+  state.winner = null;
+  state.revealed = null;
+  render();
   showScreen("choose");
 });
+
+// SOUND
+// Everything is synthesized with the Web Audio API, so there are no files to load
+const MUTE_KEY = "guess-my-number-muted";
+const muteBtn = document.querySelector(".mute");
+let audioCtx = null;
+let masterGain = null;
+let muted = false;
+try {
+  muted = localStorage.getItem(MUTE_KEY) === "1";
+} catch (err) {}
+
+const getAudio = function () {
+  if (!audioCtx) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return null;
+    audioCtx = new AudioContext();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = muted ? 0 : 0.35;
+    masterGain.connect(audioCtx.destination);
+  }
+  return audioCtx;
+};
+
+// Browsers only allow sound once the player has clicked or typed something
+const unlockAudio = function () {
+  const ctx = getAudio();
+  if (ctx && ctx.state === "suspended") ctx.resume();
+};
+window.addEventListener("pointerdown", unlockAudio);
+window.addEventListener("keydown", unlockAudio);
+
+const midiToFreq = note => 440 * 2 ** ((note - 69) / 12);
+
+// One note; start and length are in seconds from now
+const playTone = function (freq, start, length, options = {}) {
+  const ctx = getAudio();
+  if (!ctx) return;
+  const { type = "square", volume = 0.3, slideTo = null, out = masterGain } = options;
+  const t = ctx.currentTime + start;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t);
+  if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + length);
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(volume, t + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + length);
+  osc.connect(gain).connect(out);
+  osc.start(t);
+  osc.stop(t + length + 0.05);
+};
+
+const SOUNDS = {
+  start: () =>
+    [72, 76, 79].forEach((n, i) =>
+      playTone(midiToFreq(n), i * 0.08, 0.15, { volume: 0.15 })
+    ),
+  high: () => playTone(700, 0, 0.25, { slideTo: 350, volume: 0.2 }),
+  low: () => playTone(350, 0, 0.25, { slideTo: 700, volume: 0.2 }),
+  invalid: () => playTone(110, 0, 0.3, { type: "sawtooth", volume: 0.2 }),
+  timeout: () => {
+    playTone(220, 0, 0.2, { type: "sawtooth", volume: 0.25 });
+    playTone(165, 0.22, 0.4, { type: "sawtooth", volume: 0.25 });
+  },
+  tick: () => playTone(1200, 0, 0.05, { volume: 0.12 }),
+};
+
+const playSound = function (kind) {
+  if (!muted && SOUNDS[kind]) SOUNDS[kind]();
+};
+
+// Songs are [MIDI note or null for a rest, length in beats]
+const SONGS = {
+  win: {
+    beat: 0.18,
+    melody: {
+      type: "square",
+      volume: 0.1,
+      notes: [
+        72, 76, 79, 76, 72, 76, 79, 84,
+        81, 79, 76, 79, 77, 74, 71, 74,
+        72, 76, 79, 76, 72, 76, 79, 84,
+        83, 81, 79, 77, 76, 74, 72, null,
+      ].map(n => [n, 1]),
+    },
+    bass: {
+      type: "triangle",
+      volume: 0.2,
+      notes: [
+        48, 55, 48, 55, 53, 60, 55, 62,
+        48, 55, 48, 55, 55, 50, 48, null,
+      ].map(n => [n, 2]),
+    },
+  },
+  lose: {
+    beat: 0.45,
+    melody: {
+      type: "sine",
+      volume: 0.25,
+      notes: [
+        [69, 2], [67, 1], [65, 1], [64, 4],
+        [65, 2], [64, 1], [62, 1], [60, 4],
+        [62, 2], [60, 1], [59, 1], [57, 3], [null, 1],
+        [64, 2], [63, 2], [62, 2], [61, 2],
+      ],
+    },
+    bass: {
+      type: "triangle",
+      volume: 0.2,
+      notes: [
+        [45, 4], [40, 4], [41, 4], [45, 4],
+        [38, 4], [40, 4], [45, 4], [45, 4],
+      ],
+    },
+  },
+};
+
+let currentSong = null;
+let songGain = null;
+let songTimer = null;
+
+const scheduleTrack = function (track, beat, out) {
+  let time = 0;
+  track.notes.forEach(([note, beats]) => {
+    const length = beats * beat;
+    if (note !== null) {
+      playTone(midiToFreq(note), time, length * 0.9, {
+        type: track.type,
+        volume: track.volume,
+        out,
+      });
+    }
+    time += length;
+  });
+  return time;
+};
+
+const stopMusic = function () {
+  clearTimeout(songTimer);
+  if (songGain) songGain.disconnect();
+  songGain = null;
+  currentSong = null;
+};
+
+// Loops a song until something else plays or it's stopped
+const playMusic = function (name) {
+  if (name === currentSong) return;
+  stopMusic();
+  const ctx = getAudio();
+  if (!name || !ctx) return;
+  currentSong = name;
+  const song = SONGS[name];
+  const gain = ctx.createGain();
+  gain.connect(masterGain);
+  songGain = gain;
+
+  const loop = function () {
+    if (songGain !== gain) return;
+    const length = scheduleTrack(song.melody, song.beat, gain);
+    scheduleTrack(song.bass, song.beat, gain);
+    songTimer = setTimeout(loop, length * 1000);
+  };
+  loop();
+};
+
+const showMuted = function () {
+  muteBtn.textContent = muted ? "🔇" : "🔊";
+  muteBtn.setAttribute("aria-label", muted ? "Turn sound on" : "Turn sound off");
+};
+
+muteBtn.addEventListener("click", function () {
+  muted = !muted;
+  try {
+    localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
+  } catch (err) {}
+  if (getAudio()) masterGain.gain.value = muted ? 0 : 0.35;
+  showMuted();
+});
+showMuted();
 
 // FIREWORKS
 const canvas = document.querySelector(".fireworks");

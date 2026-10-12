@@ -6,6 +6,10 @@
   box-sizing: inherit;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   font-size: 62.5%;
   box-sizing: border-box;
@@ -241,6 +245,78 @@ h1 {
 
 .form-error:empty {
   display: none;
+}
+
+.timer {
+  font-size: 3rem;
+  margin-bottom: 2.5rem;
+}
+
+.timer--urgent {
+  color: #ffd2d2;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    transform: scale(1.2);
+  }
+}
+
+.result {
+  font-size: 16rem;
+  line-height: 1;
+}
+
+.banana,
+.heart {
+  display: inline-block;
+}
+
+.banana {
+  transform-origin: bottom center;
+  animation: banana-dance 0.8s linear infinite;
+}
+
+@keyframes banana-dance {
+  0%,
+  100% {
+    transform: rotate(-25deg) translateY(0);
+  }
+  25% {
+    transform: rotate(0deg) translateY(-3rem) scale(1.1);
+  }
+  50% {
+    transform: rotate(25deg) translateY(0);
+  }
+  75% {
+    transform: rotate(0deg) translateY(-3rem) scale(1.1) scaleX(-1);
+  }
+}
+
+.heart {
+  animation: heart-sad 2.4s ease-in-out infinite;
+}
+
+@keyframes heart-sad {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(1.5rem) rotate(-8deg) scale(0.95);
+  }
+  75% {
+    transform: translateY(1.5rem) rotate(8deg) scale(0.95);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banana,
+  .heart,
+  .timer--urgent {
+    animation: none;
+  }
 }
 
 .fireworks {

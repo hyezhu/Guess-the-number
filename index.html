@@ -6,7 +6,7 @@
   <meta name="viewport"
     content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="X-UA-Compatible" content="ie=edge" />
-  <link rel="stylesheet" href="style.css?v=3" />
+  <link rel="stylesheet" href="style.css?v=4" />
   <title>Guess My Number!</title>
 </head>
 
@@ -17,13 +17,16 @@
     <div class="top-buttons">
       <button class="btn again">Again!</button>
       <button class="btn change-players">Players</button>
+      <button class="btn mute" aria-label="Turn sound off">🔊</button>
     </div>
     <div class="number">?</div>
   </header>
   <main>
     <section class="left">
+      <p class="timer" hidden>⏱ 20</p>
       <input type="number" class="guess" />
       <button class="btn check">Check!</button>
+      <div class="result" hidden></div>
     </section>
     <section class="right">
       <p class="message">Player 1, start guessing...</p>
@@ -87,7 +90,7 @@
   </div>
   <canvas class="fireworks"></canvas>
   <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
-  <script src="script.js?v=3"></script>
+  <script src="script.js?v=4"></script>
 </body>
 
 </html>
