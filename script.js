@@ -13,8 +13,6 @@ const formError = document.querySelector(".form-error");
 // "guest" = online, joined through an invite link, is player 2
 let mode = "local";
 let me = null; // which player this browser controls online (0 or 1)
-let peer = null;
-let conn = null;
 let friendGone = false;
 
 // Everything the screen shows. In online games the host owns it and
@@ -150,16 +148,14 @@ const handleAction = function (action, player) {
 
 const sendAction = function (action) {
   if (mode === "guest") {
-    if (conn && conn.open) conn.send(action);
+    send({ ...action, to: friendId });
     return;
   }
   handleAction(action, mode === "host" ? 0 : state.activePlayer);
 };
 
 const sendState = function () {
-  if (mode === "host" && conn && conn.open) {
-    conn.send({ type: "state", state });
-  }
+  if (mode === "host") send({ type: "state", state, to: friendId });
 };
 
 // DRAWING THE SCREEN
@@ -218,31 +214,160 @@ const showScreen = function (name) {
 
 const showError = message => (formError.textContent = message);
 
-// Notice quickly when the other player closes the page or loses connection
+// ONLINE CONNECTION
+// Messages travel through a free public MQTT server over an ordinary secure
+// web connection, so it works even on networks that block direct
+// device-to-device connections. The room id in the invite link keeps each
+// game's messages separate.
+const BROKERS = [
+  { url: "wss://public.cloud.shiftr.io", username: "public", password: "public" },
+  { url: "wss://broker.hivemq.com:8884/mqtt" },
+  { url: "wss://broker.emqx.io:8084/mqtt" },
+];
+const TOPIC_PREFIX = "guess-my-number-hyezhu";
+
+const randomId = function () {
+  const bytes = crypto.getRandomValues(new Uint8Array(9));
+  return Array.from(bytes, b => b.toString(36).padStart(2, "0")).join("");
+};
+
+const myId = randomId(); // this browser
+let client = null;
+let room = null; // shared by both players
+let friendId = null; // the other player's browser, once connected
+let myName = "";
+let helloTimer = null;
+
+const send = function (msg) {
+  if (!client || !room) return;
+  client.publish(
+    `${TOPIC_PREFIX}/${room}`,
+    JSON.stringify({ ...msg, from: myId }),
+    { qos: 1 }
+  );
+};
+
+const connectBroker = function (index) {
+  return new Promise((resolve, reject) => {
+    const { url, ...login } = BROKERS[index];
+    const c = mqtt.connect(url, {
+      ...login,
+      connectTimeout: 6000,
+      reconnectPeriod: 2000,
+    });
+    const timer = setTimeout(() => {
+      c.end(true);
+      reject(new Error("timeout"));
+    }, 7000);
+    c.once("connect", () => {
+      clearTimeout(timer);
+      resolve(c);
+    });
+  });
+};
+
+// Connects to the first server that answers and joins the room.
+// Returns which server was used, so the invite link can point to it.
+const openRoom = async function (roomId, brokerIndexes) {
+  for (const i of brokerIndexes) {
+    try {
+      const c = await connectBroker(i);
+      client = c;
+      room = roomId;
+      c.subscribe(`${TOPIC_PREFIX}/${roomId}`, { qos: 1 });
+      c.on("message", (topic, payload) => {
+        if (c !== client) return;
+        let msg;
+        try {
+          msg = JSON.parse(payload.toString());
+        } catch (err) {
+          return;
+        }
+        if (msg.from === myId || (msg.to && msg.to !== myId)) return;
+        handleMessage(msg);
+      });
+      return i;
+    } catch (err) {}
+  }
+  throw new Error("Couldn't reach any game server");
+};
+
+// Notice when the other player closes the page or loses connection
 let heartbeat = null;
 let lastHeard = 0;
 
 const watchConnection = function () {
   lastHeard = Date.now();
-  conn.on("data", () => (lastHeard = Date.now()));
-  conn.on("close", () => friendLeft());
   clearInterval(heartbeat);
   heartbeat = setInterval(() => {
-    if (conn && conn.open) conn.send({ type: "ping" });
-    if (Date.now() - lastHeard > 8000) friendLeft();
+    send({ type: "ping", to: friendId });
+    if (Date.now() - lastHeard > 20000) friendLeft();
   }, 2000);
 };
 
 window.addEventListener("pagehide", () => {
-  if (conn && conn.open) conn.send({ type: "bye" });
+  if (friendId) send({ type: "bye", to: friendId });
 });
 
 const closeOnline = function () {
   clearInterval(heartbeat);
-  if (conn && conn.open) conn.send({ type: "bye" });
-  if (peer) peer.destroy();
-  peer = null;
-  conn = null;
+  clearInterval(helloTimer);
+  if (friendId) send({ type: "bye", to: friendId });
+  if (client) client.end(); // sends anything still queued first
+  client = null;
+  room = null;
+  friendId = null;
+};
+
+const handleMessage = function (msg) {
+  // Someone else opened the same invite after the game started
+  if (friendId && msg.from !== friendId) {
+    if (msg.type === "hello") send({ type: "full", to: msg.from });
+    return;
+  }
+  lastHeard = Date.now();
+
+  if (msg.type === "ping") return;
+  if (msg.type === "bye") return friendLeft();
+
+  // Host side
+  if (msg.type === "hello" && !friendId && mode !== "guest") {
+    friendId = msg.from;
+    let guestName = String(msg.name).trim().slice(0, 12) || "Player 2";
+    if (guestName.toLowerCase() === myName.toLowerCase()) guestName += " 2";
+    mode = "host";
+    me = 0;
+    newMatch([myName, guestName]);
+    modal.hidden = true;
+    render();
+    sendState();
+    watchConnection();
+    return;
+  }
+  if (mode === "host" && (msg.type === "guess" || msg.type === "again")) {
+    handleAction(msg, 1);
+    return;
+  }
+
+  // Guest side
+  if (msg.type === "state" && joinId) {
+    if (!friendId) {
+      friendId = msg.from;
+      clearInterval(helloTimer);
+      watchConnection();
+    }
+    mode = "guest";
+    me = 1;
+    state = msg.state;
+    modal.hidden = true;
+    render();
+    return;
+  }
+  if (msg.type === "full") {
+    clearInterval(helloTimer);
+    closeOnline();
+    showError("That game already has two players.");
+  }
 };
 
 document.querySelectorAll("[data-go]").forEach(btn =>
@@ -269,65 +394,34 @@ document.querySelector(".local-form").addEventListener("submit", function (e) {
 });
 
 // Online: create an invite link
-const inviteUrl = id =>
-  `${location.origin}${location.pathname}?join=${encodeURIComponent(id)}`;
+const inviteUrl = (roomId, brokerIndex) =>
+  `${location.origin}${location.pathname}?join=${roomId}&s=${brokerIndex}`;
 
-const peerErrorMessage = function (err) {
-  if (err.type === "peer-unavailable")
-    return "That invite link has expired. Ask your friend for a new one.";
-  if (err.type === "browser-incompatible")
-    return "This browser can't play online. Try Chrome, Firefox or Safari.";
-  return "Couldn't connect. Check your internet and try again.";
+const onlineUnavailable = function () {
+  if (typeof mqtt !== "undefined") return false;
+  showError("Couldn't load online play. Check your internet connection.");
+  return true;
 };
 
-document.querySelector(".host-form").addEventListener("submit", function (e) {
+document.querySelector(".host-form").addEventListener("submit", async function (e) {
   e.preventDefault();
-  if (typeof Peer === "undefined") {
-    showError("Couldn't load online play. Check your internet connection.");
-    return;
-  }
-  const hostName = document.getElementById("host-name").value.trim() || "Player 1";
+  if (onlineUnavailable()) return;
+  myName = document.getElementById("host-name").value.trim() || "Player 1";
 
   closeOnline();
-  peer = new Peer();
   document.querySelector(".invite-link").value = "Creating link...";
   document.querySelector(".status").textContent =
     "Waiting for your friend to join...";
   showScreen("invite");
 
-  peer.on("open", id => {
-    document.querySelector(".invite-link").value = inviteUrl(id);
-  });
-
-  peer.on("connection", newConn => {
-    if (conn) {
-      newConn.on("open", () => newConn.close()); // game is full
-      return;
-    }
-    conn = newConn;
-
-    conn.on("open", watchConnection);
-
-    conn.on("data", msg => {
-      if (msg.type === "ping") return;
-      if (msg.type === "bye") return friendLeft();
-      if (msg.type === "hello") {
-        let guestName = String(msg.name).trim().slice(0, 12) || "Player 2";
-        if (guestName.toLowerCase() === hostName.toLowerCase())
-          guestName += " 2";
-        mode = "host";
-        me = 0;
-        newMatch([hostName, guestName]);
-        modal.hidden = true;
-        render();
-        sendState();
-      } else if (mode === "host") {
-        handleAction(msg, 1);
-      }
-    });
-  });
-
-  peer.on("error", err => showError(peerErrorMessage(err)));
+  const roomId = randomId();
+  try {
+    const brokerIndex = await openRoom(roomId, BROKERS.keys());
+    document.querySelector(".invite-link").value = inviteUrl(roomId, brokerIndex);
+  } catch (err) {
+    document.querySelector(".invite-link").value = "";
+    showError("Couldn't reach the game server. Check your internet and try again.");
+  }
 });
 
 document.querySelector(".copy-link").addEventListener("click", function () {
@@ -351,40 +445,40 @@ document.querySelector(".cancel-invite").addEventListener("click", function () {
 });
 
 // Online: join through an invite link
-const joinId = new URLSearchParams(location.search).get("join");
+const params = new URLSearchParams(location.search);
+const joinId = params.get("join");
+const joinBroker = Math.min(Number(params.get("s")) || 0, BROKERS.length - 1);
 
-document.querySelector(".join-form").addEventListener("submit", function (e) {
+document.querySelector(".join-form").addEventListener("submit", async function (e) {
   e.preventDefault();
-  if (typeof Peer === "undefined") {
-    showError("Couldn't load online play. Check your internet connection.");
-    return;
-  }
-  const name = document.getElementById("join-name").value.trim() || "Player 2";
+  if (onlineUnavailable()) return;
+  myName = document.getElementById("join-name").value.trim() || "Player 2";
 
   closeOnline();
   showError("Connecting...");
-  peer = new Peer();
+  try {
+    await openRoom(joinId, [joinBroker]);
+  } catch (err) {
+    showError("Couldn't reach the game server. Check your internet and try again.");
+    return;
+  }
 
-  peer.on("open", () => {
-    conn = peer.connect(joinId, { reliable: true });
-
-    conn.on("open", () => {
-      watchConnection();
-      conn.send({ type: "hello", name });
-    });
-
-    conn.on("data", msg => {
-      if (msg.type === "bye") return friendLeft();
-      if (msg.type !== "state") return;
-      mode = "guest";
-      me = 1;
-      state = msg.state;
-      modal.hidden = true;
-      render();
-    });
-  });
-
-  peer.on("error", err => showError(peerErrorMessage(err)));
+  // Keep saying hello until the host answers
+  showError("Looking for your friend's game...");
+  const started = Date.now();
+  const sayHello = () => send({ type: "hello", name: myName });
+  sayHello();
+  helloTimer = setInterval(() => {
+    if (Date.now() - started > 30000) {
+      clearInterval(helloTimer);
+      closeOnline();
+      showError(
+        "Couldn't find that game. Make sure your friend still has the invite screen open, or ask for a new link."
+      );
+      return;
+    }
+    sayHello();
+  }, 2000);
 });
 
 const friendLeft = function () {
