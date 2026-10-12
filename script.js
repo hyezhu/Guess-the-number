@@ -287,21 +287,17 @@ const render = function () {
 };
 
 // COMPUTER PLAYER
-// Uses the hints from both players' guesses. Easier levels guess sloppier.
-let difficulty = "normal";
+// Uses the hints from both players' guesses, picking somewhere in the
+// middle half of what's left so it's beatable
 let computerTurn = 0;
 let computerTimer = null;
 
 const computerGuess = function () {
   const { lo, hi } = known;
-  const randomBetween = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
-  if (difficulty === "hard") return Math.floor((lo + hi) / 2);
-  if (difficulty === "normal") {
-    const quarter = Math.floor((hi - lo) / 4);
-    return randomBetween(lo + quarter, hi - quarter);
-  }
-  // Easy: often forgets the hints
-  return Math.random() < 0.4 ? randomBetween(1, MAX_NUMBER) : randomBetween(lo, hi);
+  const quarter = Math.floor((hi - lo) / 4);
+  const from = lo + quarter;
+  const to = hi - quarter;
+  return from + Math.floor(Math.random() * (to - from + 1));
 };
 
 const planComputerMove = function () {
@@ -567,7 +563,6 @@ document.querySelector(".computer-form").addEventListener("submit", function (e)
   e.preventDefault();
   let name = document.getElementById("computer-name").value.trim() || "Player 1";
   if (name.toLowerCase() === "computer") name += " 2";
-  difficulty = document.getElementById("difficulty").value;
   startOffline("computer", [name, "Computer"]);
 });
 
