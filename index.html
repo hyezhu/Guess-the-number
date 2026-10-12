@@ -13,8 +13,11 @@
 <body>
   <header>
     <h1>Guess My Number!</h1>
-    <p class="between">(Between 1 and 23)</p>
-    <button class="btn again">Again!</button>
+    <p class="between">(Between 1 and 100)</p>
+    <div class="top-buttons">
+      <button class="btn again">Again!</button>
+      <button class="btn change-players">Players</button>
+    </div>
     <div class="number">?</div>
   </header>
   <main>
@@ -23,14 +26,32 @@
       <button class="btn check">Check!</button>
     </section>
     <section class="right">
-      <p class="message">Start guessing...</p>
-      <p class="label-score">💯 Score: <span class="score">20</span>
-      </p>
+      <p class="message">Player 1, start guessing...</p>
+      <div class="label-score player player--0 player--active">
+        <p>👤 <span class="name" id="name--0">Player 1</span>: <span class="score" id="score--0">100</span></p>
+        <p class="record" id="record--0">W 0 · L 0</p>
+      </div>
+      <div class="label-score player player--1">
+        <p>👤 <span class="name" id="name--1">Player 2</span>: <span class="score" id="score--1">100</span></p>
+        <p class="record" id="record--1">W 0 · L 0</p>
+      </div>
       <p class="label-highscore">
         🥇 Highscore: <span class="highscore">0</span>
       </p>
     </section>
   </main>
+  <div class="modal" hidden>
+    <form class="name-form">
+      <h2>Who's playing?</h2>
+      <label for="input-name--0">Player 1</label>
+      <input type="text" id="input-name--0" maxlength="12" placeholder="Player 1" autocomplete="off" />
+      <label for="input-name--1">Player 2</label>
+      <input type="text" id="input-name--1" maxlength="12" placeholder="Player 2" autocomplete="off" />
+      <p class="form-error"></p>
+      <button type="submit" class="btn">Start!</button>
+    </form>
+  </div>
+  <canvas class="fireworks"></canvas>
   <script src="script.js"></script>
 </body>
 
